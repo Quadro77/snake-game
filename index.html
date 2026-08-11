@@ -364,17 +364,31 @@
       });
     }
 
-    // motion-blur trail behind the snake: fades with age, longer/fainter while BOLT
+    // motion-blur trail behind the snake. Polished look: each ghost is a soft
+    // two-layer rounded shape (pale outer halo + inner core) whose size tapers
+    // and alpha falls off quadratically with age, so it reads as a receding
+    // motion wake behind the head rather than faint smear squares. Longer and
+    // brighter while BOLT is active. Pure render state, drawn under the body.
     if (trail && trail.length) {
       const speedBlur = fastTick();
+      const n = trail.length;
       trail.forEach((p, i) => {
-        const age = i / trail.length;              // 0 newest -> ~1 oldest
-        const alpha = (speedBlur ? 0.20 : 0.13) * (1 - age);
-        if (alpha <= 0.005) return;
-        const pad = CELL * 0.35;
+        const age = i / n;                 // 0 newest -> ~1 oldest
+        const fade = 1 - age;              // 1 near head -> 0 at tail
+        const peak = speedBlur ? 0.20 : 0.13;   // same load-bearing peaks as core
+        const alpha = peak * fade * fade;  // quadratic falloff = smoother motion
+        if (alpha <= 0.004) return;
+        const grow = 0.55 + 0.45 * fade;   // newest fills cell, oldest tapers in
+        const size = CELL * grow;
+        const ox = p.x * CELL + (CELL - size) / 2;
+        const oy = p.y * CELL + (CELL - size) / 2;
+        const r = 4 + 3 * fade;
+        // soft outer halo edge (cheap softness, no ctx.filter / shadowBlur)
+        ctx.fillStyle = "rgba(56,224,139," + (alpha * 0.38).toFixed(3) + ")";
+        rrect(ox - 1.5, oy - 1.5, size + 3, size + 3, r + 2); ctx.fill();
+        // inner core
         ctx.fillStyle = "rgba(56,224,139," + alpha.toFixed(3) + ")";
-        rrect(p.x * CELL + pad, p.y * CELL + pad, CELL - pad * 2, CELL - pad * 2, 6);
-        ctx.fill();
+        rrect(ox, oy, size, size, r); ctx.fill();
       });
     }
 
