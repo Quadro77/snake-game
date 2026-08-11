@@ -322,7 +322,7 @@
   };
 
   function turn(d) {
-    if (!running) { start(); return; }
+    if (!running || gameOver) { start(); return; }
     // Ignore 180° reverse (can't turn back into yourself) and keep current dir otherwise.
     if (d.x === -dir.x && d.y === -dir.y) return;
     nextDir = d;
