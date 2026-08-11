@@ -38,6 +38,8 @@
   }
   .stat .label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
   .stat .value { font-size: 24px; font-weight: 700; }
+  #effects-row.active { border-color: #ffd16666; box-shadow: 0 0 12px rgba(255,209,102,.18); }
+  #effects.active { color: #ffd166; font-size: 16px; letter-spacing: .5px; }
   #message {
     background: var(--surface); border: 1px solid var(--grid); border-radius: 12px;
     padding: 16px; text-align: center; min-height: 84px;
@@ -82,6 +84,7 @@
     <div class="panel">
       <div class="stat"><span class="label">Score</span><span class="value" id="score">0</span></div>
       <div class="stat"><span class="label">High score</span><span class="value" id="high">0</span></div>
+      <div class="stat" id="effects-row"><span class="label">Effects</span><span class="value" id="effects">—</span></div>
       <div id="message">
         <strong id="msg-title">Press any arrow key to start</strong>
         <span id="msg-sub">Eat the food, don't hit the walls or yourself</span>
@@ -129,8 +132,8 @@
   const FOOD_TYPES = [
     { type: "normal", w: 8, score: 10, grow: 1 },
     { type: "gold",   w: 2, score: 30, grow: 2, label: "★" },
-    { type: "bolt",   w: 3, score: 10, grow: 1, effect: "speed", ms: EFFECT_MS },
-    { type: "flip",   w: 3, score: 10, grow: 1, effect: "flip",  ms: EFFECT_MS }
+    { type: "bolt",   w: 3, score: 10, grow: 1, effect: "speed", ms: EFFECT_MS, label: "⚡" },
+    { type: "flip",   w: 3, score: 10, grow: 1, effect: "flip",  ms: EFFECT_MS, label: "⟳" }
   ];
   const TYPE_META = Object.fromEntries(FOOD_TYPES.map(t => [t.type, t]));
 
@@ -180,11 +183,17 @@
   };
 
   const updateEffectsHud = () => {
+    // Live wall-clock countdown (effects expire on a timestamp, so the
+    // remaining time stays accurate even while the tick interval changes
+    // mid-BOLT).
     const parts = [];
-    if (fastTick()) parts.push("⚡ speed");
-    if (flipped())  parts.push("🔄 flip");
-    effectsEl.textContent = parts.length ? parts.join(" · ") : "—";
-    effectsEl.style.color = parts.length ? "#ffd166" : "";
+    const secs = (until) => Math.max(1, Math.ceil((until - now()) / 1000)) + "s";
+    if (fastTick()) parts.push(`⚡ ${secs(effectSpeedUntil)}`);
+    if (flipped())  parts.push(`🔄 ${secs(effectFlipUntil)}`);
+    effectsEl.textContent = parts.length ? parts.join("  ") : "—";
+    effectsEl.classList.toggle("active", parts.length > 0);
+    const row = document.getElementById("effects-row");
+    if (row) row.classList.toggle("active", parts.length > 0);
   };
 
   const bitSet = (x, y) => snake.some(s => s.x === x && s.y === y);
