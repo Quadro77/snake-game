@@ -125,6 +125,7 @@
 
   let snake, dir, nextDir, foods, score, running, gameOver, timer, newRecord;
   let effectSpeedUntil = 0;   // wall-clock expiry (ms; 0 = inactive)
+  let trail = [];             // recent head positions for the motion-blur trail
 
   /* ---------- Food / power-up config ---------- */
   const MAX_FOODS = 3;          // extra pills on the board at once
@@ -142,6 +143,8 @@
   // Effective interval computed at every schedule from LIVE state,
   // so a mid-game pickup takes effect on the next tick.
   const currentTick = () => fastTick() ? TICK_MS / 2 : TICK_MS;
+  // Motion-blur trail length: subtle by default, longer/fainter while BOLT is active.
+  const trailMax = () => fastTick() ? 12 : 6;
 
   const randFood = () => {
     for (let i = 0; i < 200; i++) {
@@ -219,7 +222,22 @@
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.start(t); osc.stop(t + dur);
   }
-  const sndEat  = () => beep(700, 0.08, "square", 0.05);
+  // Distinct eat sound per food type (WebAudio only, no assets):
+  //   normal -> single warm square blip
+  //   gold   -> bright ascending triangle arpeggio (rewarding)
+  //   bolt   -> quick sawtooth descent (effect pickup)
+  const sndEat = (food) => {
+    const t = food && food.type;
+    if (t === "gold") {
+      beep(880, 0.10, "triangle", 0.06);
+      setTimeout(() => beep(1320, 0.14, "triangle", 0.06), 60);
+    } else if (t === "bolt") {
+      beep(520, 0.07, "sawtooth", 0.05);
+      setTimeout(() => beep(300, 0.10, "sawtooth", 0.05), 55);
+    } else {
+      beep(700, 0.08, "square", 0.05);
+    }
+  };
   const sndStart= () => beep(540, 0.07, "triangle", 0.06);
   const sndOver = () => { beep(320, 0.16, "sawtooth", 0.05); setTimeout(() => beep(200, 0.24, "sawtooth", 0.05), 130); };
 
@@ -242,13 +260,17 @@
 
     snake.unshift(nhead);
 
+    // Record the head's path for the motion-blur trail (drawn behind the body).
+    trail.unshift({ x: head.x, y: head.y });
+    if (trail.length > trailMax()) trail.pop();
+
     if (eating) {
       const fi = foods.findIndex(f => f.x === nhead.x && f.y === nhead.y);
       const food = foods.splice(fi, 1)[0];
       addScore(food.score);
       if (food.effect === "speed") effectSpeedUntil = now() + food.ms;
       for (let i = 1; i < food.grow; i++) snake.push(snake[snake.length - 1]);
-      sndEat();
+      sndEat(food);
       fillFoods();
     } else {
       snake.pop();
@@ -280,6 +302,7 @@
     running = true;
     newRecord = false;
     effectSpeedUntil = 0;
+    trail = [];
     foods = [];
     fillFoods();
     scoreEl.textContent = "0";
@@ -338,6 +361,20 @@
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
           ctx.fillText(meta.label, cx, cy + 1);
         }
+      });
+    }
+
+    // motion-blur trail behind the snake: fades with age, longer/fainter while BOLT
+    if (trail && trail.length) {
+      const speedBlur = fastTick();
+      trail.forEach((p, i) => {
+        const age = i / trail.length;              // 0 newest -> ~1 oldest
+        const alpha = (speedBlur ? 0.20 : 0.13) * (1 - age);
+        if (alpha <= 0.005) return;
+        const pad = CELL * 0.35;
+        ctx.fillStyle = "rgba(56,224,139," + alpha.toFixed(3) + ")";
+        rrect(p.x * CELL + pad, p.y * CELL + pad, CELL - pad * 2, CELL - pad * 2, 6);
+        ctx.fill();
       });
     }
 
@@ -430,7 +467,9 @@
       get effectSpeedUntil() { return effectSpeedUntil; },
       set effectSpeedUntil(v) { effectSpeedUntil = v; },
       get currentTick() { return currentTick; },
-      step, start, turn, endGame, addScore, fillFoods, spawnFood, pickFoodType,
+      get trail() { return trail.slice(); },
+      get trailMax() { return trailMax; },
+      step, start, turn, endGame, addScore, fillFoods, spawnFood, pickFoodType, sndEat,
       TYPE_META, FOOD_TYPES, GRID, TICK_MS, MAX_FOODS, EFFECT_MS
     };
   }
