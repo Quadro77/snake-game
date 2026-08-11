@@ -113,24 +113,78 @@
   const msgTitle = document.getElementById("msg-title");
   const msgSub = document.getElementById("msg-sub");
   const restartBtn = document.getElementById("restart");
+  const effectsEl = document.getElementById("effects");
 
   /* ---------- State ---------- */
   const HIGH_KEY = "snake-high-score";
   let high = Number(localStorage.getItem(HIGH_KEY) || 0);
   highEl.textContent = high;
 
-  let snake, dir, nextDir, food, score, running, gameOver, timer, newRecord;
+  let snake, dir, nextDir, foods, score, running, gameOver, timer, newRecord;
+  let effectSpeedUntil = 0, effectFlipUntil = 0;   // wall-clock expiry (ms; 0 = inactive)
+
+  /* ---------- Food / power-up config ---------- */
+  const MAX_FOODS = 3;          // extra pills on the board at once
+  const EFFECT_MS = 5000;       // timed-effect duration (~5s)
+  const FOOD_TYPES = [
+    { type: "normal", w: 8, score: 10, grow: 1 },
+    { type: "gold",   w: 2, score: 30, grow: 2, label: "★" },
+    { type: "bolt",   w: 3, score: 10, grow: 1, effect: "speed", ms: EFFECT_MS },
+    { type: "flip",   w: 3, score: 10, grow: 1, effect: "flip",  ms: EFFECT_MS }
+  ];
+  const TYPE_META = Object.fromEntries(FOOD_TYPES.map(t => [t.type, t]));
 
   /* ---------- Helpers ---------- */
+  const now = () => Date.now();
+  const flipped  = () => now() < effectFlipUntil;
+  const fastTick = () => now() < effectSpeedUntil;
+  // Effective interval computed at every schedule from LIVE state,
+  // so a mid-game pickup takes effect on the next tick.
+  const currentTick = () => fastTick() ? TICK_MS / 2 : TICK_MS;
+
   const randFood = () => {
-    let p;
-    do {
-      p = {
-        x: Math.floor(Math.random() * GRID),
-        y: Math.floor(Math.random() * GRID)
-      };
-    } while (snake.some(s => s.x === p.x && s.y === p.y));
-    return p;
+    for (let i = 0; i < 200; i++) {
+      const p = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
+      if (!snake.some(s => s.x === p.x && s.y === p.y) &&
+          !foods.some(f => f.x === p.x && f.y === p.y)) {
+        return p;
+      }
+    }
+    return null;
+  };
+
+  const pickFoodType = () => {
+    if (foods.some(f => f.effect)) return "normal";   // cap: only one special at a time
+    const total = FOOD_TYPES.reduce((s, t) => s + t.w, 0);
+    let r = Math.random() * total;
+    for (const t of FOOD_TYPES) { r -= t.w; if (r <= 0) return t.type; }
+    return "normal";
+  };
+
+  const spawnFood = () => {
+    const p = randFood();
+    if (p) foods.push({ ...p, ...TYPE_META[pickFoodType()] });
+  };
+  const fillFoods = () => { while (foods.length < MAX_FOODS) spawnFood(); };
+
+  // Single scoring path so every source updates high + persist.
+  const addScore = (points) => {
+    score += points;
+    scoreEl.textContent = score;
+    if (score > high) {
+      high = score;
+      highEl.textContent = high;
+      localStorage.setItem(HIGH_KEY, String(high));
+      newRecord = true;
+    }
+  };
+
+  const updateEffectsHud = () => {
+    const parts = [];
+    if (fastTick()) parts.push("⚡ speed");
+    if (flipped())  parts.push("🔄 flip");
+    effectsEl.textContent = parts.length ? parts.join(" · ") : "—";
+    effectsEl.style.color = parts.length ? "#ffd166" : "";
   };
 
   const bitSet = (x, y) => snake.some(s => s.x === x && s.y === y);
@@ -174,10 +228,7 @@
     if (nhead.x < 0 || nhead.y < 0 || nhead.x >= GRID || nhead.y >= GRID) {
       return endGame();
     }
-    // Collision: body. If the snake is eating this tick it grows, so the tail
-    // does NOT vacate and the full body (incl. tail) blocks. If not eating, the
-    // tail vacates this tick, so moving into its current cell is allowed.
-    const eating = nhead.x === food.x && nhead.y === food.y;
+    const eating = foods.some(f => f.x === nhead.x && f.y === nhead.y);
     const bodyToCheck = eating ? snake : snake.slice(0, -1);
     if (bodyToCheck.some(s => s.x === nhead.x && s.y === nhead.y)) {
       return endGame();
@@ -186,22 +237,21 @@
     snake.unshift(nhead);
 
     if (eating) {
-      score += 10;
-      scoreEl.textContent = score;
-      if (score > high) {
-        high = score;
-        highEl.textContent = high;
-        localStorage.setItem(HIGH_KEY, String(high));
-        newRecord = true;
-      }
+      const fi = foods.findIndex(f => f.x === nhead.x && f.y === nhead.y);
+      const food = foods.splice(fi, 1)[0];
+      addScore(food.score);
+      if (food.effect === "speed") effectSpeedUntil = now() + food.ms;
+      if (food.effect === "flip")  effectFlipUntil  = now() + food.ms;
+      for (let i = 1; i < food.grow; i++) snake.push(snake[snake.length - 1]);
       sndEat();
-      food = randFood();
+      fillFoods();
     } else {
       snake.pop();
     }
 
+    updateEffectsHud();
     draw();
-    timer = setTimeout(step, TICK_MS);
+    timer = setTimeout(step, currentTick());
   }
 
   function endGame() {
@@ -224,11 +274,15 @@
     gameOver = false;
     running = true;
     newRecord = false;
+    effectSpeedUntil = 0;
+    effectFlipUntil = 0;
+    foods = [];
+    fillFoods();
     scoreEl.textContent = "0";
     restartBtn.style.display = "none";
     msgTitle.textContent = "Playing…";
     msgSub.textContent = "Use arrow keys / WASD";
-    food = randFood();
+    updateEffectsHud();
     draw();
     sndStart();
     clearTimeout(timer);
@@ -259,18 +313,29 @@
       ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(canvas.width, i * CELL); ctx.stroke();
     }
 
-    // food (with soft glow)
-    if (food) {
-    const fx = food.x * CELL + CELL / 2, fy = food.y * CELL + CELL / 2;
-    const glow = ctx.createRadialGradient(fx, fy, 1, fx, fy, CELL * 0.9);
-    glow.addColorStop(0, "rgba(255,107,107,.5)");
-    glow.addColorStop(1, "rgba(255,107,107,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(fx, fy, CELL * 0.9, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#ff6b6b";
-    ctx.beginPath();
-    ctx.arc(fx, fy, CELL / 2 - 3, 0, Math.PI * 2);
-    ctx.fill();
+    // foods (soft glow; glyph per type)
+    if (foods && foods.length) {
+      foods.forEach(f => {
+        const meta = TYPE_META[f.type] || TYPE_META.normal;
+        const cx = f.x * CELL + CELL / 2, cy = f.y * CELL + CELL / 2;
+        const color = f.type === "gold" ? "#ffd166"
+                    : f.type === "bolt" ? "#a78bfa"
+                    : f.type === "flip" ? "#5eead4"
+                    : "#ff6b6b";
+        const glow = ctx.createRadialGradient(cx, cy, 1, cx, cy, CELL * 0.9);
+        glow.addColorStop(0, color + "66");
+        glow.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL * 0.9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(cx, cy, CELL / 2 - 3, 0, Math.PI * 2); ctx.fill();
+        if (meta.label) {
+          ctx.fillStyle = "#0b1a12";
+          ctx.font = "bold 11px system-ui";
+          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.fillText(meta.label, cx, cy + 1);
+        }
+      });
     }
 
     // snake (rounded segments, brighter head with glow)
@@ -323,6 +388,8 @@
 
   function turn(d) {
     if (!running || gameOver) { start(); return; }
+    // FLIP reverses arrow input before the 180 guard so both read the same direction.
+    if (flipped()) d = { x: -d.x, y: -d.y };
     // Ignore 180° reverse (can't turn back into yourself) and keep current dir otherwise.
     if (d.x === -dir.x && d.y === -dir.y) return;
     nextDir = d;
@@ -345,6 +412,29 @@
 
   // initial idle draw
   draw();
+
+  /* ---------- Test hooks (safe no-op in browser) ---------- */
+  if (typeof window !== "undefined") {
+    window.__game = {
+      get score() { return score; },
+      get foods() { return foods.slice(); },
+      set foods(v) { foods = v; },
+      get snake() { return snake.slice(); },
+      set snake(v) { snake = v; },
+      get dir() { return dir; },
+      get nextDir() { return nextDir; },
+      set nextDir(v) { nextDir = v; },
+      get running() { return running; },
+      get gameOver() { return gameOver; },
+      get effectSpeedUntil() { return effectSpeedUntil; },
+      get effectFlipUntil() { return effectFlipUntil; },
+      set effectSpeedUntil(v) { effectSpeedUntil = v; },
+      set effectFlipUntil(v) { effectFlipUntil = v; },
+      get currentTick() { return currentTick; },
+      step, start, turn, endGame, addScore, fillFoods, spawnFood, pickFoodType,
+      TYPE_META, FOOD_TYPES, GRID, TICK_MS, MAX_FOODS, EFFECT_MS
+    };
+  }
 })();
 </script>
 </body>
