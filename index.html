@@ -290,15 +290,15 @@
       ctx.fillStyle = i === 0 ? "#2ec779" : "#38e08b";
       rrect(x, y, size, size, r); ctx.fill();
       if (i === 0) {
-        ctx.fillStyle = "#0b1a12";
+        // Direction-facing head: two eyes pushed ahead along `dir`, spread left/right
+        const cx = seg.x * CELL + CELL / 2, cy = seg.y * CELL + CELL / 2;
+        const dx = dir.x, dy = dir.y;
+        const fx = cx + dx * (CELL * 0.30), fy = cy + dy * (CELL * 0.30);
+        const S = CELL * 0.18;
         const eyeR = 3;
-        // simple eyes toward direction
-        const ex1 = seg.x * CELL + CELL / 2 + dir.y * (CELL / 3) + dir.x * (CELL / 3);
-        const ey1 = seg.y * CELL + CELL / 2 + dir.x * (CELL / 3) - dir.y * (CELL / 3);
-        const ex2 = seg.x * CELL + CELL / 2 - dir.y * (CELL / 3) + dir.x * (CELL / 3);
-        const ey2 = seg.y * CELL + CELL / 2 + dir.x * (CELL / 3) + dir.y * (CELL / 3);
-        ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#0b1a12";
+        ctx.beginPath(); ctx.arc(fx - dy * S, fy + dx * S, eyeR, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(fx + dy * S, fy - dx * S, eyeR, 0, Math.PI * 2); ctx.fill();
       }
     });
     }
