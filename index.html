@@ -174,14 +174,18 @@
     if (nhead.x < 0 || nhead.y < 0 || nhead.x >= GRID || nhead.y >= GRID) {
       return endGame();
     }
-    // Collision: body (ignoring tail that's about to move? no — classic: tail moves, but we check body)
-    if (snake.some(s => s.x === nhead.x && s.y === nhead.y)) {
+    // Collision: body. If the snake is eating this tick it grows, so the tail
+    // does NOT vacate and the full body (incl. tail) blocks. If not eating, the
+    // tail vacates this tick, so moving into its current cell is allowed.
+    const eating = nhead.x === food.x && nhead.y === food.y;
+    const bodyToCheck = eating ? snake : snake.slice(0, -1);
+    if (bodyToCheck.some(s => s.x === nhead.x && s.y === nhead.y)) {
       return endGame();
     }
 
     snake.unshift(nhead);
 
-    if (nhead.x === food.x && nhead.y === food.y) {
+    if (eating) {
       score += 10;
       scoreEl.textContent = score;
       if (score > high) {
@@ -256,6 +260,7 @@
     }
 
     // food (with soft glow)
+    if (food) {
     const fx = food.x * CELL + CELL / 2, fy = food.y * CELL + CELL / 2;
     const glow = ctx.createRadialGradient(fx, fy, 1, fx, fy, CELL * 0.9);
     glow.addColorStop(0, "rgba(255,107,107,.5)");
@@ -266,8 +271,10 @@
     ctx.beginPath();
     ctx.arc(fx, fy, CELL / 2 - 3, 0, Math.PI * 2);
     ctx.fill();
+    }
 
     // snake (rounded segments, brighter head with glow)
+    if (snake && snake.length) {
     snake.forEach((seg, i) => {
       const pad = i === 0 ? 1 : 2.5;
       const x = seg.x * CELL + pad, y = seg.y * CELL + pad;
@@ -294,6 +301,7 @@
         ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill();
       }
     });
+    }
 
     if (gameOver) {
       ctx.fillStyle = "rgba(0,0,0,.55)";

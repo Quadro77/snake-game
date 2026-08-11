@@ -1,2 +1,3 @@
 .scratch-*.js
 .scratch-core-check.js
+.qa-*.js
